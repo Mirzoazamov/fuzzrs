@@ -50,7 +50,7 @@ Instead of printing 10,000 unique responses because a timestamp changed on the p
 Install directly from source via `cargo`:
 
 ```bash
-git clone https://github.com/your-username/fuzzrs.git
+git clone https://github.com/Mirzoazamov/fuzzrs.git
 cd fuzzrs
 cargo build --release
 ```
