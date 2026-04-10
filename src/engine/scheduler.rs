@@ -8,7 +8,8 @@ use tokio::time::{Duration, Instant};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Task {
     pub id: usize,
-    // Add real URL/Mutation data here later
+    pub path: String,
+    pub url: String,
 }
 
 /// Simulated response for testing the scheduler.
@@ -223,7 +224,7 @@ mod tests {
         });
 
         for i in 0..100 {
-            scheduler.submit(Task { id: i }).await.unwrap();
+            scheduler.submit(Task { id: i, path: "".to_string(), url: "".to_string() }).await.unwrap();
         }
 
         scheduler.shutdown().await;
@@ -247,7 +248,7 @@ mod tests {
         // 2 will be processing, 10 in queue.
         // the 13th, 14th, 15th will block the producer.
         for i in 0..15 {
-            scheduler.submit(Task { id: i }).await.unwrap();
+            scheduler.submit(Task { id: i, path: "".to_string(), url: "".to_string() }).await.unwrap();
         }
         
         let elapsed = start.elapsed();
@@ -283,7 +284,7 @@ mod tests {
 
         // Submit 10 tasks
         for i in 0..10 {
-            scheduler.submit(Task { id: i }).await.unwrap();
+            scheduler.submit(Task { id: i, path: "".to_string(), url: "".to_string() }).await.unwrap();
         }
 
         scheduler.shutdown().await;
@@ -311,7 +312,7 @@ mod tests {
         });
 
         for i in 0..50 {
-            scheduler.submit(Task { id: i }).await.unwrap();
+            scheduler.submit(Task { id: i, path: "".to_string(), url: "".to_string() }).await.unwrap();
         }
 
         // initiate shutdown immediately

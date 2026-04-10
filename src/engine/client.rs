@@ -5,121 +5,84 @@ use bytes::Bytes;
 use rand::Rng;
 
 #[derive(Debug, Error)]
-pub enum ClientError {
+pub enum FuzzError {
     #[error("HTTP request error: {0}")]
     RequestError(#[from] ReqwestError),
 }
 
-/// Lightweight struct to eliminate Reqwest Response overhead while holding physical execution metrics securely.
-pub struct HttpResponseMeta {
+pub struct ResponseData {
+    pub url: String,
     pub status: u16,
-    pub response_time: Duration,
-    pub content_length: Option<u64>,
-    pub body: Bytes, // Carries the payload safely using zero-copy architecture locally
-}
-
-#[derive(Clone)]
-pub struct RequestConfig<'a> {
-    pub url: &'a str,
-    pub method: Method,
-    pub headers: Option<&'a HeaderMap>,
-    pub timeout: Duration,
-    pub max_retries: u32,
-    pub body: Option<Bytes>, // 1. Zero copy Refcount body
-    pub mutation_hook: Option<fn(RequestBuilder) -> RequestBuilder>, // 5. WAF mutation interceptor
+    pub body: String,
 }
 
 #[derive(Clone)]
 pub struct HttpClient {
     client: Client,
+    max_retries: u32,
 }
 
 impl HttpClient {
-    pub fn new(max_connections: usize, connect_timeout: Duration, global_timeout: Duration) -> Result<Self, ReqwestError> {
+    pub fn new(max_connections: usize, timeout: Duration, max_retries: u32) -> Result<Self, ReqwestError> {
         let client = Client::builder()
             .pool_max_idle_per_host(max_connections)
             .pool_idle_timeout(Duration::from_secs(90))
             .tcp_keepalive(Duration::from_secs(60))
-            .connect_timeout(connect_timeout) // 3. Connection strict bound
-            .timeout(global_timeout)         // 3. Global socket sweep bound internally
+            .timeout(timeout) 
             .use_rustls_tls()
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::none()) // Requirement 8: Do NOT follow redirects
             .build()?;
 
-        Ok(Self { client })
+        Ok(Self { client, max_retries })
     }
 
-    pub async fn send(&self, config: RequestConfig<'_>) -> Result<HttpResponseMeta, ClientError> {
+    pub async fn fetch(&self, url: &str) -> Result<ResponseData, FuzzError> {
         let mut attempts = 0;
-        let mut backoff = Duration::from_millis(50); // Initial backoff scalar
+        let mut backoff = Duration::from_millis(50);
 
         loop {
-            let mut req_builder = self.client.request(config.method.clone(), config.url)
-                // Optionally clamps faster limits per request logically
-                .timeout(config.timeout);
-
-            if let Some(headers) = config.headers {
-                req_builder = req_builder.headers(headers.clone());
-            }
-
-            if let Some(b) = &config.body {
-                // req_builder natively delegates `bytes::Bytes` cleanly downward locking perfectly 1:1 internally
-                req_builder = req_builder.body(b.clone()); 
-            }
-
-            if let Some(hook) = config.mutation_hook {
-                req_builder = hook(req_builder);
-            }
-
             let start = std::time::Instant::now();
-            match req_builder.send().await {
+            let req = self.client.request(Method::GET, url);
+
+            match req.send().await {
                 Ok(response) => {
-                    let status = response.status();
-                    let response_time = start.elapsed();
-                    let content_length = response.content_length();
+                    let status = response.status().as_u16();
                     
-                    // Consume natively. Chunked transfers dropping natively trigger `err.is_body()` maps cleanly here
-                    let body = match response.bytes().await {
+                    let body_bytes = match response.bytes().await {
                         Ok(b) => b,
                         Err(e) => {
                             if e.is_timeout() || e.is_connect() || e.is_request() || e.is_body() {
                                 attempts += 1;
-                                if attempts > config.max_retries {
-                                    return Err(ClientError::RequestError(e));
-                                }
+                                if attempts > self.max_retries { return Err(FuzzError::RequestError(e)); }
                                 let jitter = rand::thread_rng().gen_range(0..25);
                                 tokio::time::sleep(backoff + Duration::from_millis(jitter)).await;
                                 backoff *= 2; 
                                 continue;
                             }
-                            return Err(ClientError::RequestError(e));
+                            return Err(FuzzError::RequestError(e));
                         }
                     };
 
-                    return Ok(HttpResponseMeta {
-                        status: status.as_u16(),
-                        response_time,
-                        content_length,
-                        body,
+                    let body_str = String::from_utf8_lossy(&body_bytes).into_owned();
+
+                    return Ok(ResponseData {
+                        url: url.to_string(),
+                        status,
+                        body: body_str,
                     });
                 }
                 Err(err) => {
                     attempts += 1;
-
-                    // 2. Advanced retry bounds correctly factoring failed partially parsed transfers (`is_request()`)
                     if err.is_timeout() || err.is_connect() || err.is_request() {
-                        if attempts > config.max_retries {
-                            return Err(ClientError::RequestError(err));
+                        if attempts > self.max_retries {
+                            return Err(FuzzError::RequestError(err));
                         }
-                        
-                        // Jittered Exponential scaling protecting upstream DDOS flags dynamically
                         let jitter = rand::thread_rng().gen_range(0..25);
                         tokio::time::sleep(backoff + Duration::from_millis(jitter)).await;
                         backoff *= 2; 
                         continue;
                     }
-
-                    return Err(ClientError::RequestError(err));
+                    return Err(FuzzError::RequestError(err));
                 }
             }
         }

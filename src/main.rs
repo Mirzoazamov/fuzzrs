@@ -10,6 +10,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use bytes::Bytes;
 use std::fmt::Write;
+use std::sync::Arc;
 
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 pub enum Severity {
@@ -82,14 +83,84 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
 
     let mut analyzer = analysis::analyzer::Analyzer::new();
     
-    let file = File::open(&args.wordlist).await?;
-    let mut reader = BufReader::new(file);
-    let mut buf = Vec::new();
+    let (tx_results, mut rx_results) = tokio::sync::mpsc::channel::<(engine::scheduler::Task, Result<engine::client::ResponseData, engine::client::FuzzError>)>(8192);
+
+    let client = engine::client::HttpClient::new(
+        args.concurrency,
+        std::time::Duration::from_millis(args.timeout),
+        args.retries,
+    )?;
+
+    let scheduler = Arc::new(engine::scheduler::Scheduler::new(
+        10000, 
+        args.concurrency,
+        move |task: engine::scheduler::Task, _state| {
+            let client_clone = client.clone();
+            let tx = tx_results.clone();
+            async move {
+                match client_clone.fetch(&task.url).await {
+                    Ok(resp) => {
+                        let _ = tx.send((task, Ok(resp))).await;
+                        engine::scheduler::TaskResult::Ok
+                    }
+                    Err(e) => {
+                        if let engine::client::FuzzError::RequestError(re) = &e {
+                            if let Some(status) = re.status() {
+                                if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                                    return engine::scheduler::TaskResult::RateLimited;
+                                }
+                            }
+                        }
+                        let _ = tx.send((task, Err(e))).await;
+                        engine::scheduler::TaskResult::Error
+                    }
+                }
+            }
+        }
+    ));
+
+    // We must drop the main thread's tx_results clone so the channel naturally closes when the workers finish dropping their copies safely.
+    drop(tx_results);
+
+    let wordlist_path = args.wordlist.clone();
+    let base_url = args.url.clone();
+    let sched_clone = Arc::clone(&scheduler);
+
+    // Spawn producer isolating file synchronous blocking traits cleanly mapping bytes
+    tokio::spawn(async move {
+        let file = File::open(&wordlist_path).await.unwrap();
+        let mut reader = BufReader::new(file);
+        let mut buf = Vec::new();
+        let mut idx = 0;
+
+        while reader.read_until(b'\n', &mut buf).await.unwrap_or(0) != 0 {
+            let word = String::from_utf8_lossy(&buf).trim().to_string();
+            buf.clear();
+            
+            if word.is_empty() || word.starts_with("#") {
+                continue;
+            }
+            
+            let target_path = base_url.replace("FUZZ", &word);
+            let task = engine::scheduler::Task {
+                id: idx,
+                path: word,
+                url: target_path,
+            };
+            
+            let _ = sched_clone.submit(task).await;
+            idx += 1;
+        }
+
+        // Drop the scheduler gracefully waiting actively until every single active inflight worker clears organically.
+        if let Ok(s) = Arc::try_unwrap(sched_clone) {
+            s.shutdown().await;
+        }
+    });
 
     let mut seen_clusters = HashSet::new();
     let mut filtered_count = 0;
     let mut total_requests = 0;
-
     let mut unique_findings: Vec<ScanResult> = Vec::new();
 
     if args.format == OutputFormat::Table {
@@ -97,51 +168,46 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
         println!("{:-<80}", "-");
     }
 
-    while reader.read_until(b'\n', &mut buf).await? != 0 {
-        let word = String::from_utf8_lossy(&buf).trim().to_string();
-        buf.clear();
-        
-        if word.is_empty() {
-            continue;
-        }
-        
+    // Consumer reads natively from workers cleanly
+    while let Some((task, res)) = rx_results.recv().await {
         total_requests += 1;
-        let target_path = args.url.replace("FUZZ", &word);
+        
+        match res {
+            Ok(data) => {
+                // Ignore empty bodies or treat them actively. Treat 301/302 normally (Redirects = none natively)
+                let body_bytes = Bytes::from(data.body);
+                let cluster_id = analyzer.classify(data.status, &body_bytes);
+                let similarity = 99.5; // Stub confidence mapping for Phase 2 integration
 
-        // [MOCK]
-        let simulated_status = if word.contains("admin") { 403 } else { 200 };
-        let simulated_body = if simulated_status == 403 {
-            Bytes::from("Access denied globally for generic user mappings natively")
-        } else {
-            Bytes::from("Welcome generic frontpage HTML output completely unchanged")
-        };
+                if seen_clusters.insert(cluster_id) {
+                    let severity = ScanResult::determine_severity(data.status);
+                    let confidence = ScanResult::determine_confidence(similarity);
 
-        let cluster_id = analyzer.classify(simulated_status, &simulated_body);
-        let similarity = 99.5; 
+                    let result = ScanResult {
+                        path: task.url.clone(),
+                        status: data.status,
+                        cluster_id,
+                        severity: severity.clone(),
+                        confidence: confidence.clone(),
+                        similarity: Some(similarity),
+                    };
 
-        if seen_clusters.insert(cluster_id) {
-            let severity = ScanResult::determine_severity(simulated_status);
-            let confidence = ScanResult::determine_confidence(similarity);
+                    unique_findings.push(result);
 
-            let result = ScanResult {
-                path: target_path.clone(),
-                status: simulated_status,
-                cluster_id,
-                severity: severity.clone(),
-                confidence: confidence.clone(),
-                similarity: Some(similarity),
-            };
-
-            unique_findings.push(result);
-
-            if args.format == OutputFormat::Table {
-                println!(
-                    "{:<35} | {:<8} | {:<8?} | {:<10?} | {:<12}",
-                    target_path, simulated_status, severity, confidence, cluster_id
-                );
+                    if args.format == OutputFormat::Table {
+                        println!(
+                            "{:<35} | {:<8} | {:<8?} | {:<10?} | {:<12}",
+                            task.url, data.status, severity, confidence, cluster_id
+                        );
+                    }
+                } else {
+                    filtered_count += 1;
+                }
             }
-        } else {
-            filtered_count += 1;
+            Err(_e) => {
+                // Intentionally mapping hard DNS and connection resets strictly behind the scenes filtering terminal output noise organically 
+                filtered_count += 1; 
+            }
         }
     }
 
