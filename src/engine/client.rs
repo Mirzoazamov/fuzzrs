@@ -1,7 +1,6 @@
-use reqwest::{Client, Method, Error as ReqwestError, header::HeaderMap, RequestBuilder};
+use reqwest::{Client, Method, Error as ReqwestError};
 use std::time::Duration;
 use thiserror::Error;
-use bytes::Bytes;
 use rand::Rng;
 
 #[derive(Debug, Error)]
@@ -41,7 +40,7 @@ impl HttpClient {
         let mut backoff = Duration::from_millis(50);
 
         loop {
-            let start = std::time::Instant::now();
+            let _start = std::time::Instant::now();
             let req = self.client.request(Method::GET, url);
 
             match req.send().await {

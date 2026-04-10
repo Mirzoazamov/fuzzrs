@@ -91,12 +91,13 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
         args.retries,
     )?;
 
-    let scheduler = Arc::new(engine::scheduler::Scheduler::new(
+    let tx_for_closure = tx_results.clone();
+    let scheduler = engine::scheduler::Scheduler::new(
         10000, 
         args.concurrency,
         move |task: engine::scheduler::Task, _state| {
             let client_clone = client.clone();
-            let tx = tx_results.clone();
+            let tx = tx_for_closure.clone();
             async move {
                 match client_clone.fetch(&task.url).await {
                     Ok(resp) => {
@@ -104,7 +105,8 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
                         engine::scheduler::TaskResult::Ok
                     }
                     Err(e) => {
-                        if let engine::client::FuzzError::RequestError(re) = &e {
+                        let FuzzError_ref = &e;
+                        if let engine::client::FuzzError::RequestError(re) = FuzzError_ref {
                             if let Some(status) = re.status() {
                                 if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                                     return engine::scheduler::TaskResult::RateLimited;
@@ -117,16 +119,13 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
                 }
             }
         }
-    ));
+    );
 
-    // We must drop the main thread's tx_results clone so the channel naturally closes when the workers finish dropping their copies safely.
     drop(tx_results);
 
     let wordlist_path = args.wordlist.clone();
     let base_url = args.url.clone();
-    let sched_clone = Arc::clone(&scheduler);
 
-    // Spawn producer isolating file synchronous blocking traits cleanly mapping bytes
     tokio::spawn(async move {
         let file = File::open(&wordlist_path).await.unwrap();
         let mut reader = BufReader::new(file);
@@ -148,14 +147,11 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
                 url: target_path,
             };
             
-            let _ = sched_clone.submit(task).await;
+            let _ = scheduler.submit(task).await;
             idx += 1;
         }
 
-        // Drop the scheduler gracefully waiting actively until every single active inflight worker clears organically.
-        if let Ok(s) = Arc::try_unwrap(sched_clone) {
-            s.shutdown().await;
-        }
+        scheduler.shutdown().await;
     });
 
     let mut seen_clusters = HashSet::new();
