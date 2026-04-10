@@ -10,6 +10,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use bytes::Bytes;
 use std::fmt::Write;
+use indicatif::{ProgressBar, ProgressStyle};
 
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 pub enum Severity {
@@ -120,6 +121,19 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
 
     drop(tx_results);
 
+    // Fast O(n) line count for progress bar allocation natively
+    let total_lines = {
+        let f = File::open(&args.wordlist).await?;
+        let mut r = BufReader::new(f);
+        let mut c = 0;
+        let mut b = Vec::new();
+        while r.read_until(b'\n', &mut b).await.unwrap_or(0) != 0 {
+            c += 1;
+            b.clear();
+        }
+        c
+    };
+
     let wordlist_path = args.wordlist.clone();
     let base_url = args.url.clone();
 
@@ -161,12 +175,32 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
         println!("{:-<80}", "-");
     }
 
+    let pb = if args.format != OutputFormat::Json {
+        let p = ProgressBar::new(total_lines as u64);
+        p.set_style(ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({per_sec})")
+            .unwrap()
+            .progress_chars("#>-"));
+        Some(p)
+    } else {
+        None
+    };
+
     // Consumer reads natively from workers cleanly
     while let Some((task, res)) = rx_results.recv().await {
         total_requests += 1;
         
+        if let Some(ref p) = pb {
+            p.inc(1);
+        }
+
         match res {
             Ok(data) => {
+                if args.hide_status.contains(&data.status) {
+                    filtered_count += 1;
+                    continue; 
+                }
+
                 // Ignore empty bodies or treat them actively. Treat 301/302 normally (Redirects = none natively)
                 let body_bytes = Bytes::from(data.body);
                 let cluster_id = analyzer.classify(data.status, &body_bytes);
@@ -188,10 +222,15 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
                     unique_findings.push(result);
 
                     if args.format == OutputFormat::Table {
-                        println!(
+                        let row = format!(
                             "{:<35} | {:<8} | {:<8?} | {:<10?} | {:<12}",
                             task.url, data.status, severity, confidence, cluster_id
                         );
+                        if let Some(ref p) = pb {
+                            p.println(row);
+                        } else {
+                            println!("{}", row);
+                        }
                     }
                 } else {
                     filtered_count += 1;
@@ -202,6 +241,10 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
                 filtered_count += 1; 
             }
         }
+    }
+
+    if let Some(p) = pb {
+        p.finish_and_clear();
     }
 
     let current_timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();

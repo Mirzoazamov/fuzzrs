@@ -52,6 +52,10 @@ pub struct ScanArgs {
     /// Optional proxy URL (e.g. http://127.0.0.1:8080)
     #[arg(long)]
     pub proxy: Option<String>,
+
+    /// Ignore specific HTTP status codes perfectly (e.g. 404, 500)
+    #[arg(long, value_delimiter = ',', num_args = 1..)]
+    pub hide_status: Vec<u16>,
 }
 
 impl ScanArgs {
