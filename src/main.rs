@@ -10,7 +10,6 @@ use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use bytes::Bytes;
 use std::fmt::Write;
-use std::sync::Arc;
 
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 pub enum Severity {
@@ -105,12 +104,10 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
                         engine::scheduler::TaskResult::Ok
                     }
                     Err(e) => {
-                        let FuzzError_ref = &e;
-                        if let engine::client::FuzzError::RequestError(re) = FuzzError_ref {
-                            if let Some(status) = re.status() {
-                                if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                                    return engine::scheduler::TaskResult::RateLimited;
-                                }
+                        let engine::client::FuzzError::RequestError(re) = &e;
+                        if let Some(status) = re.status() {
+                            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                                return engine::scheduler::TaskResult::RateLimited;
                             }
                         }
                         let _ = tx.send((task, Err(e))).await;
