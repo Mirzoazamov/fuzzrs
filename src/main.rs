@@ -83,7 +83,8 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
     let mut analyzer = analysis::analyzer::Analyzer::new();
     
     let file = File::open(&args.wordlist).await?;
-    let mut lines = BufReader::new(file).lines();
+    let mut reader = BufReader::new(file);
+    let mut buf = Vec::new();
 
     let mut seen_clusters = HashSet::new();
     let mut filtered_count = 0;
@@ -96,7 +97,14 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
         println!("{:-<80}", "-");
     }
 
-    while let Some(word) = lines.next_line().await? {
+    while reader.read_until(b'\n', &mut buf).await? != 0 {
+        let word = String::from_utf8_lossy(&buf).trim().to_string();
+        buf.clear();
+        
+        if word.is_empty() {
+            continue;
+        }
+        
         total_requests += 1;
         let target_path = args.url.replace("FUZZ", &word);
 
