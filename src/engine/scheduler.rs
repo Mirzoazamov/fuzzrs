@@ -143,7 +143,8 @@ impl Scheduler {
 
                 tokio::spawn(async move {
                     // Check pause right before executing actual work (adheres to "sleep all workers")
-                    if let Some(until) = { *state_clone.pause_until.read().unwrap() } {
+                    let pause = { *state_clone.pause_until.read().unwrap() };
+                    if let Some(until) = pause {
                         let now = Instant::now();
                         if now < until {
                             tokio::time::sleep(until - now).await;
