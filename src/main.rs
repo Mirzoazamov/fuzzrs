@@ -260,7 +260,9 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
                             truncate(&task.url, 50), data.status, severity, confidence, cluster_id
                         );
                         if let Some(ref p) = pb {
-                            p.println(row);
+                            p.suspend(|| {
+                                println!("{}", row);
+                            });
                         } else {
                             println!("{}", row);
                         }
