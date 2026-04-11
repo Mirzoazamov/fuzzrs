@@ -271,7 +271,7 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
                         let row = format!("{:<40} | {:<6} | {:<7} | {:<10} | {:<6}",
                             truncate(&task.url, 40), data.status, severity, confidence, cluster_id
                         );
-                        table_rows.push(row);
+                        table_rows.push(row.clone());
                         if let Some(ref p) = pb {
                             p.suspend(|| {
                                 println!("{}", row);
