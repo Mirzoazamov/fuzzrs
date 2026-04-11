@@ -207,12 +207,7 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
     let mut filtered_count = 0;
     let mut total_requests = 0;
     let mut unique_findings: Vec<ScanResult> = Vec::new();
-
-    if args.format == OutputFormat::Table {
-        let _guard = print_lock.lock().await;
-        println!("{:<40} | {:<6} | {:<7} | {:<10} | {:<6}", "TARGET PATH", "STATUS", "SEV", "CONFIDENCE", "CLUSTER");
-        println!("{:-<width$}", "-", width = TABLE_SEPARATOR_WIDTH);
-    }
+    let mut table_rows: Vec<String> = Vec::new();
 
     let pb = if args.format != OutputFormat::Json {
         let p = ProgressBar::new(total_lines as u64);
@@ -264,15 +259,7 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
                         let row = format!("{:<40} | {:<6} | {:<7} | {:<10} | {:<6}",
                             truncate(&task.url, 40), data.status, severity, confidence, cluster_id
                         );
-                        if let Some(ref p) = pb {
-                            let _guard = print_lock.lock().await;
-                            p.suspend(|| {
-                                println!("{}", row);
-                            });
-                        } else {
-                            let _guard = print_lock.lock().await;
-                            println!("{}", row);
-                        }
+                        table_rows.push(row);
                     }
                 } else {
                     filtered_count += 1;
@@ -287,6 +274,16 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
 
     if let Some(p) = pb {
         p.finish_and_clear();
+    }
+
+    if args.format == OutputFormat::Table {
+        let _guard = print_lock.lock().await;
+        println!("{:<40} | {:<6} | {:<7} | {:<10} | {:<6}", "TARGET PATH", "STATUS", "SEV", "CONFIDENCE", "CLUSTER");
+        println!("{:-<width$}", "-", width = TABLE_SEPARATOR_WIDTH);
+        for row in &table_rows {
+            println!("{}", row);
+        }
+        println!("{:-<width$}", "-", width = TABLE_SEPARATOR_WIDTH);
     }
 
     let current_timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
