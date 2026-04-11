@@ -94,7 +94,7 @@ impl ScanResult {
     }
 }
 
-const TABLE_SEPARATOR_WIDTH: usize = 93;
+const TABLE_SEPARATOR_WIDTH: usize = 81;
 
 fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
@@ -210,7 +210,7 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
 
     if args.format == OutputFormat::Table {
         let _guard = print_lock.lock().await;
-        println!("{:<50} | {:<6} | {:<7} | {:<10} | {:<8}", "TARGET PATH", "STATUS", "SEV", "CONFIDENCE", "CLUSTER");
+        println!("{:<40} | {:<6} | {:<7} | {:<10} | {:<6}", "TARGET PATH", "STATUS", "SEV", "CONFIDENCE", "CLUSTER");
         println!("{:-<width$}", "-", width = TABLE_SEPARATOR_WIDTH);
     }
 
@@ -261,8 +261,8 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
                     unique_findings.push(result);
 
                     if args.format == OutputFormat::Table {
-                        let row = format!("{:<50} | {:<6} | {:<7} | {:<10} | {:<8}",
-                            truncate(&task.url, 50), data.status, severity, confidence, cluster_id
+                        let row = format!("{:<40} | {:<6} | {:<7} | {:<10} | {:<6}",
+                            truncate(&task.url, 40), data.status, severity, confidence, cluster_id
                         );
                         if let Some(ref p) = pb {
                             let _guard = print_lock.lock().await;
