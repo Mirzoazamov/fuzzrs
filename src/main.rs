@@ -193,8 +193,8 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
     let mut unique_findings: Vec<ScanResult> = Vec::new();
 
     if args.format == OutputFormat::Table {
-        println!("{:<35} | {:<8} | {:<8} | {:<10} | {:<12}", "TARGET PATH", "STATUS", "SEVERITY", "CONFIDENCE", "CLUSTER ID");
-        println!("{:-<80}", "-");
+        println!("{:<60} | {:<8} | {:<8} | {:<10} | {:<10}", "TARGET PATH", "STATUS", "SEVERITY", "CONFIDENCE", "CLUSTER ID");
+        println!("{:-<110}", "-");
     }
 
     let pb = if args.format != OutputFormat::Json {
@@ -245,7 +245,7 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
 
                     if args.format == OutputFormat::Table {
                         let row = format!(
-                            "{:<35} | {:<8} | {:<8} | {:<10} | {:<12}",
+                            "{:<60} | {:<8} | {:<8} | {:<10} | {:<10}",
                             task.url, data.status, severity, confidence, cluster_id
                         );
                         if let Some(ref p) = pb {
