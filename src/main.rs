@@ -209,16 +209,28 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
     let mut unique_findings: Vec<ScanResult> = Vec::new();
     let mut table_rows: Vec<String> = Vec::new();
 
-    let pb = if args.format == OutputFormat::Json || args.format == OutputFormat::Table {
-        None
-    } else {
+    let pb = if args.format != OutputFormat::Json {
         let p = ProgressBar::new(total_lines as u64);
         p.set_style(ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({per_sec})")
             .unwrap()
             .progress_chars("#>-"));
         Some(p)
+    } else {
+        None
     };
+
+    if args.format == OutputFormat::Table {
+        if let Some(ref p) = pb {
+            p.suspend(|| {
+                println!("{:<40} | {:<6} | {:<7} | {:<10} | {:<6}", "TARGET PATH", "STATUS", "SEV", "CONFIDENCE", "CLUSTER");
+                println!("{:-<width$}", "-", width = TABLE_SEPARATOR_WIDTH);
+            });
+        } else {
+            println!("{:<40} | {:<6} | {:<7} | {:<10} | {:<6}", "TARGET PATH", "STATUS", "SEV", "CONFIDENCE", "CLUSTER");
+            println!("{:-<width$}", "-", width = TABLE_SEPARATOR_WIDTH);
+        }
+    }
 
     // Consumer reads natively from workers cleanly
     while let Some((task, res)) = rx_results.recv().await {
@@ -260,6 +272,13 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
                             truncate(&task.url, 40), data.status, severity, confidence, cluster_id
                         );
                         table_rows.push(row);
+                        if let Some(ref p) = pb {
+                            p.suspend(|| {
+                                println!("{}", row);
+                            });
+                        } else {
+                            println!("{}", row);
+                        }
                     }
                 } else {
                     filtered_count += 1;
@@ -278,11 +297,6 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
 
     if args.format == OutputFormat::Table {
         let _guard = print_lock.lock().await;
-        println!("{:<40} | {:<6} | {:<7} | {:<10} | {:<6}", "TARGET PATH", "STATUS", "SEV", "CONFIDENCE", "CLUSTER");
-        println!("{:-<width$}", "-", width = TABLE_SEPARATOR_WIDTH);
-        for row in &table_rows {
-            println!("{}", row);
-        }
         println!("{:-<width$}", "-", width = TABLE_SEPARATOR_WIDTH);
     }
 
