@@ -93,7 +93,6 @@ impl ScanResult {
     }
 }
 
-const TABLE_ROW_FORMAT: &str = "{:<50} | {:<6} | {:<7} | {:<10} | {:<8}";
 const TABLE_SEPARATOR_WIDTH: usize = 93;
 
 fn truncate(s: &str, max: usize) -> String {
@@ -206,7 +205,7 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
     let mut unique_findings: Vec<ScanResult> = Vec::new();
 
     if args.format == OutputFormat::Table {
-        println!(TABLE_ROW_FORMAT, "TARGET PATH", "STATUS", "SEV", "CONFIDENCE", "CLUSTER");
+        println!("{:<50} | {:<6} | {:<7} | {:<10} | {:<8}", "TARGET PATH", "STATUS", "SEV", "CONFIDENCE", "CLUSTER");
         println!("{:-<width$}", "-", width = TABLE_SEPARATOR_WIDTH);
     }
 
@@ -257,7 +256,7 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
                     unique_findings.push(result);
 
                     if args.format == OutputFormat::Table {
-                        let row = format!(TABLE_ROW_FORMAT,
+                        let row = format!("{:<50} | {:<6} | {:<7} | {:<10} | {:<8}",
                             truncate(&task.url, 50), data.status, severity, confidence, cluster_id
                         );
                         if let Some(ref p) = pb {
