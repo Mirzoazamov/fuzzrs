@@ -26,6 +26,28 @@ pub enum Confidence {
     LOW,
 }
 
+impl std::fmt::Display for Severity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Severity::HIGH => "HIGH",
+            Severity::MEDIUM => "MEDIUM",
+            Severity::LOW => "LOW",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl std::fmt::Display for Confidence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Confidence::HIGH => "HIGH",
+            Confidence::MEDIUM => "MEDIUM",
+            Confidence::LOW => "LOW",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 #[derive(Debug, Serialize, Clone)]
 pub struct ScanResult {
     pub path: String,
@@ -223,7 +245,7 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
 
                     if args.format == OutputFormat::Table {
                         let row = format!(
-                            "{:<35} | {:<8} | {:<8?} | {:<10?} | {:<12}",
+                            "{:<35} | {:<8} | {:<8} | {:<10} | {:<12}",
                             task.url, data.status, severity, confidence, cluster_id
                         );
                         if let Some(ref p) = pb {
@@ -284,7 +306,7 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
         
         // Push strings dynamically onto the static buffer directly natively.
         for finding in &unique_findings {
-            let _ = write!(&mut report_contents, "{:<8} | {:<10?} | {:<12?} | {:<35} | {:<8}\n", 
+            let _ = write!(&mut report_contents, "{:<8} | {:<10} | {:<12} | {:<35} | {:<8}\n", 
                 finding.status, finding.severity, finding.confidence, finding.path, finding.cluster_id);
         }
         
