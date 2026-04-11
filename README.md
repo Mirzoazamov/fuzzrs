@@ -51,13 +51,13 @@ Install directly from source via `cargo`:
 
 ```bash
 git clone https://github.com/Mirzoazamov/fuzzrs.git
-cd fuzzrs
+cd fuzzer-rs
 cargo build --release
 ```
 
 Run the binary natively:
 ```bash
-./target/release/fuzzrs --help
+./target/release/fuzzer-rs --help
 ```
 
 *(Pre-compiled platform binaries will be available in the upcoming v1.0 GitHub Releases).*
@@ -66,10 +66,10 @@ Run the binary natively:
 
 ## 🧪 Usage
 
-Basic execution fundamentally requires the `FUZZ` target keyword within your provided URL and a valid wordlist. The engine will rapidly substitute `FUZZ` payloads synchronously:
+Basic execution fundamentally requires the `FUZZ` target keyword within your provided URL and a valid wordlist. The engine will rapidly substitute `FUZZ` payloads across the dictionary:
 
 ```bash
-fuzzrs scan https://target.com/api/FUZZ -w wordlist.txt
+fuzzer-rs scan https://target.com/api/FUZZ -w wordlist.txt
 ```
 
 ---
@@ -82,18 +82,16 @@ fuzzrs scan https://target.com/api/FUZZ -w wordlist.txt
 [*] Wordlist: wordlist.txt
 [*] Concurrency bounds: 50
 
-[SCAN RESULTS]
-TARGET PATH                         | STATUS   | CLUSTER ID   | METADATA       
---------------------------------------------------------------------------------
-https://target.com/api/admin        | 403      | 0            | Sim: 99.5%
-https://target.com/api/users        | 200      | 1            | Sim: 100.0%
---------------------------------------------------------------------------------
+TARGET PATH                               | STATUS | SEV    | CONFIDENCE | CLUSTER
+---------------------------------------------------------------------------------
+https://target.com/api/admin              | 403    | HIGH   | HIGH       | 0
+https://target.com/api/users              | 200    | MEDIUM | HIGH       | 1
+---------------------------------------------------------------------------------
 
 [SCAN SUMMARY]
 Total Requests    : 10000
 Unique Endpoints  : 2
 Filtered Noise    : 9998
-Deduplication Rate: 99.98%
 ```
 
 ---
@@ -103,11 +101,13 @@ Deduplication Rate: 99.98%
 | Flag | Full Argument | Example | Description |
 |:---:|:---|:---|:---|
 | `-w` | `--wordlist` | `-w payloads.txt` | Path to the textual fuzzing dictionary (Required) |
-| `-c` | `--concurrency`| `-c 150` | Maximum simultaneous open TCP connections (Default: 50) |
-| `-t` | `--timeout` | `-t 10000` | Global socket timeout bound in milliseconds (Default: 5000) |
-| | `--format` | `--format json` | Output topology (`json` or `table`) (Default: table) |
-| | `--retries` | `--retries 5` | Jittered exponential retries permitted per payload (Default: 3) |
-| | `--proxy` | `--proxy http://127.0.0.1:8080` | Route all upstream Engine traffic cleanly |
+| `-c` | `--concurrency` | `-c 150` | Maximum concurrent requests (Default: 50) |
+| `-t` | `--timeout` | `-t 10000` | Request timeout in milliseconds (Default: 5000) |
+| | `--format` | `--format json` | Output format (`json` or `table`) (Default: table) |
+| | `--report` | `--report report.txt` | Save a structured scan report to disk |
+| | `--retries` | `--retries 5` | Number of retry attempts for failed requests (Default: 3) |
+| | `--proxy` | `--proxy http://127.0.0.1:8080` | Route all upstream Engine traffic through a proxy |
+| | `--hide-status` | `--hide-status 404,500` | Ignore specific HTTP status codes in terminal output |
 
 ---
 
