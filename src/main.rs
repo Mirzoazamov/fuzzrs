@@ -6,6 +6,7 @@ use clap::Parser;
 use cli::{Cli, Commands, ScanArgs, OutputFormat};
 use serde::Serialize;
 use std::collections::HashSet;
+use std::sync::Arc;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use bytes::Bytes;
@@ -108,7 +109,10 @@ fn truncate(s: &str, max: usize) -> String {
 pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
     args.validate()?;
 
+    let print_lock = Arc::new(tokio::sync::Mutex::new(()));
+
     if args.format != OutputFormat::Json {
+        let _guard = print_lock.lock().await;
         eprintln!("[*] Initializing High-Performance Semantic Fuzzer...");
         eprintln!("[*] Target bounds: {}", args.url);
         eprintln!("[*] Wordlist: {}", args.wordlist.display());
@@ -205,6 +209,7 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
     let mut unique_findings: Vec<ScanResult> = Vec::new();
 
     if args.format == OutputFormat::Table {
+        let _guard = print_lock.lock().await;
         println!("{:<50} | {:<6} | {:<7} | {:<10} | {:<8}", "TARGET PATH", "STATUS", "SEV", "CONFIDENCE", "CLUSTER");
         println!("{:-<width$}", "-", width = TABLE_SEPARATOR_WIDTH);
     }
@@ -260,10 +265,12 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
                             truncate(&task.url, 50), data.status, severity, confidence, cluster_id
                         );
                         if let Some(ref p) = pb {
+                            let _guard = print_lock.lock().await;
                             p.suspend(|| {
                                 println!("{}", row);
                             });
                         } else {
+                            let _guard = print_lock.lock().await;
                             println!("{}", row);
                         }
                     }
@@ -294,8 +301,10 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
                 filtered: filtered_count,
             },
         };
+        let _guard = print_lock.lock().await;
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
+        let _guard = print_lock.lock().await;
         println!("{:-<80}", "-");
         println!("\n[SCAN SUMMARY]");
         println!("Total Requests    : {}", total_requests);
@@ -331,6 +340,7 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
         tokio::fs::write(&report_path, report_contents).await?;
         
         if args.format != OutputFormat::Json {
+            let _guard = print_lock.lock().await;
             println!("\n[*] Saved human-readable Text report natively to {}", report_path.display());
         }
     }
