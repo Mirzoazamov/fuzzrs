@@ -93,6 +93,16 @@ impl ScanResult {
     }
 }
 
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let mut truncated: String = s.chars().take(max.saturating_sub(3)).collect();
+        truncated.push_str("...");
+        truncated
+    }
+}
+
 pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
     args.validate()?;
 
@@ -193,8 +203,8 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
     let mut unique_findings: Vec<ScanResult> = Vec::new();
 
     if args.format == OutputFormat::Table {
-        println!("{:<60} | {:<8} | {:<8} | {:<10} | {:<10}", "TARGET PATH", "STATUS", "SEVERITY", "CONFIDENCE", "CLUSTER ID");
-        println!("{:-<110}", "-");
+        println!("{:<50} | {:<6} | {:<6} | {:<10} | {:<10}", "TARGET PATH", "STATUS", "SEV", "CONFIDENCE", "CLUSTER");
+        println!("{:-<92}", "-");
     }
 
     let pb = if args.format != OutputFormat::Json {
@@ -245,8 +255,8 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
 
                     if args.format == OutputFormat::Table {
                         let row = format!(
-                            "{:<60} | {:<8} | {:<8} | {:<10} | {:<10}",
-                            task.url, data.status, severity, confidence, cluster_id
+                            "{:<50} | {:<6} | {:<6} | {:<10} | {:<10}",
+                            truncate(&task.url, 50), data.status, severity, confidence, cluster_id
                         );
                         if let Some(ref p) = pb {
                             p.println(row);
