@@ -209,15 +209,15 @@ pub async fn run_scan(args: ScanArgs) -> anyhow::Result<()> {
     let mut unique_findings: Vec<ScanResult> = Vec::new();
     let mut table_rows: Vec<String> = Vec::new();
 
-    let pb = if args.format != OutputFormat::Json {
+    let pb = if args.format == OutputFormat::Json || args.format == OutputFormat::Table {
+        None
+    } else {
         let p = ProgressBar::new(total_lines as u64);
         p.set_style(ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({per_sec})")
             .unwrap()
             .progress_chars("#>-"));
         Some(p)
-    } else {
-        None
     };
 
     // Consumer reads natively from workers cleanly
